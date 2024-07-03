@@ -4,7 +4,7 @@ use std::{
 };
 
 fn main() {
-    let listener = TcpListener::bind("127.0.0.1:4221").expect("Failed to bind!");
+    let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
 
     for stream in listener.incoming() {
         match stream {
@@ -18,10 +18,17 @@ fn main() {
                     Ok(_) => {
                         let path = request_line.split_whitespace().nth(1).unwrap_or("");
 
-                        let response = if path == "/" {
-                            "HTTP/1.1 200 OK\r\n\r\n"
+                        let response = if path.starts_with("/echo/") {
+                            let echo_str = &path[6..];
+                            let content_length = echo_str.len();
+                            format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                                content_length, echo_str
+                            )
+                        } else if path == "/" {
+                            "HTTP/1.1 200 OK\r\n\r\n".to_string()
                         } else {
-                            "HTTP/1.1 404 Not Found\r\n\r\n"
+                            "HTTP/1.1 404 Not Found\r\n\r\n".to_string()
                         };
 
                         match stream.write_all(response.as_bytes()) {
