@@ -171,7 +171,7 @@ fn serve_file(filepath: PathBuf, headers: &str) -> Result<String, Box<dyn Error>
         content_length
     );
 
-    if accepts_gzip(headers) {
+    if supports_gzip(headers) {
         response.push_str("Content-Encoding: gzip\r\n");
     }
 
@@ -187,7 +187,7 @@ fn serve_user_agent(user_agent: &str, headers: &str) -> Result<String, Box<dyn E
         content_length
     );
 
-    if accepts_gzip(headers) {
+    if supports_gzip(headers) {
         response.push_str("Content-Encoding: gzip\r\n");
     }
 
@@ -204,7 +204,7 @@ fn serve_echo(path: &str, headers: &str) -> Result<String, Box<dyn Error>> {
         content_length
     );
 
-    if accepts_gzip(headers) {
+    if supports_gzip(headers) {
         response.push_str("Content-Encoding: gzip\r\n");
     }
 
@@ -213,8 +213,15 @@ fn serve_echo(path: &str, headers: &str) -> Result<String, Box<dyn Error>> {
     Ok(response)
 }
 
-fn accepts_gzip(headers: &str) -> bool {
+fn supports_gzip(headers: &str) -> bool {
     headers
         .lines()
-        .any(|line| line.to_lowercase().contains("accept-encoding: gzip"))
+        .find(|line| line.to_lowercase().starts_with("accept-encoding:"))
+        .map(|line| {
+            line["accept-encoding:".len()..]
+                .split(',')
+                .map(str::trim)
+                .any(|encoding| encoding == "gzip")
+        })
+        .unwrap_or(false)
 }
