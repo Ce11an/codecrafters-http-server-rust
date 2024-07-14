@@ -62,7 +62,7 @@ fn handle_client(mut stream: TcpStream, directory: &str) -> Result<(), Box<dyn E
     let body = read_body(&mut buf_reader, &headers)?;
 
     let response = match method.as_str() {
-        "POST" => handle_post(&path, &headers, &body, directory),
+        "POST" => handle_post(&path, &body, directory),
         "GET" => handle_get(&path, &headers, directory),
         _ => Ok(METHOD_NOT_ALLOWED_HEADER.to_string()),
     }?;
@@ -115,12 +115,7 @@ fn read_body<R: BufRead>(reader: &mut R, headers: &str) -> Result<Vec<u8>, Box<d
     Ok(body)
 }
 
-fn handle_post(
-    path: &str,
-    _headers: &str,
-    body: &[u8],
-    directory: &str,
-) -> Result<String, Box<dyn Error>> {
+fn handle_post(path: &str, body: &[u8], directory: &str) -> Result<String, Box<dyn Error>> {
     if path.starts_with("/files/") {
         let filename = &path[7..];
         let filepath = Path::new(directory).join(filename);
@@ -139,15 +134,15 @@ fn handle_get(path: &str, headers: &str, directory: &str) -> Result<String, Box<
         let filename = &path[7..];
         let filepath = Path::new(directory).join(filename);
         if filepath.exists() {
-            serve_file(filepath)
+            serve_file(filepath, headers)
         } else {
             Ok(NOT_FOUND_HEADER.to_string())
         }
     } else if path == "/user-agent" {
         let user_agent = extract_user_agent(headers)?;
-        serve_user_agent(&user_agent)
+        serve_user_agent(&user_agent, headers)
     } else if path.starts_with("/echo/") {
-        serve_echo(path)
+        serve_echo(path, headers)
     } else if path == "/" {
         Ok(OK_HEADER.to_string())
     } else {
@@ -165,31 +160,61 @@ fn extract_user_agent(headers: &str) -> Result<String, Box<dyn Error>> {
     Ok(String::new())
 }
 
-fn serve_file(filepath: PathBuf) -> Result<String, Box<dyn Error>> {
+fn serve_file(filepath: PathBuf, headers: &str) -> Result<String, Box<dyn Error>> {
     let mut file = File::open(filepath)?;
     let mut contents = Vec::new();
     file.read_to_end(&mut contents)?;
     let content_length = contents.len();
-    Ok(format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n{}",
-        content_length,
-        String::from_utf8_lossy(&contents)
-    ))
+
+    let mut response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n",
+        content_length
+    );
+
+    if accepts_gzip(headers) {
+        response.push_str("Content-Encoding: gzip\r\n");
+    }
+
+    response.push_str("\r\n");
+    response.push_str(&String::from_utf8_lossy(&contents));
+    Ok(response)
 }
 
-fn serve_user_agent(user_agent: &str) -> Result<String, Box<dyn Error>> {
+fn serve_user_agent(user_agent: &str, headers: &str) -> Result<String, Box<dyn Error>> {
     let content_length = user_agent.len();
-    Ok(format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
-        content_length, user_agent
-    ))
+    let mut response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n",
+        content_length
+    );
+
+    if accepts_gzip(headers) {
+        response.push_str("Content-Encoding: gzip\r\n");
+    }
+
+    response.push_str("\r\n");
+    response.push_str(user_agent);
+    Ok(response)
 }
 
-fn serve_echo(path: &str) -> Result<String, Box<dyn Error>> {
+fn serve_echo(path: &str, headers: &str) -> Result<String, Box<dyn Error>> {
     let echo_str = &path[6..];
     let content_length = echo_str.len();
-    Ok(format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
-        content_length, echo_str
-    ))
+    let mut response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n",
+        content_length
+    );
+
+    if accepts_gzip(headers) {
+        response.push_str("Content-Encoding: gzip\r\n");
+    }
+
+    response.push_str("\r\n");
+    response.push_str(echo_str);
+    Ok(response)
+}
+
+fn accepts_gzip(headers: &str) -> bool {
+    headers
+        .lines()
+        .any(|line| line.to_lowercase().contains("accept-encoding: gzip"))
 }
